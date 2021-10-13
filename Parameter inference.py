@@ -58,7 +58,6 @@ class System:
         >>> System.add("P", "E")
         """
     
-        # TODO: add short species name (for printing reactions) and long species name (for plots)
         if full_names:
             if len(species)%2 != 0:
                 raise ValueError("There must be even number of strings with `full_names=True`")
@@ -94,10 +93,7 @@ class System:
                      name:str="[No description]", additional_stoichiometry:dict={}, ):
         """
         
-        Function to add reaction to system.
-        Beware of data structures: ("Z") is not a tuple, but ("Z",) is.
-        (Notice the comma befor closing parenthesis.)
-        
+        Function to add a reaction to the system.
 
         
         Parameters
@@ -489,6 +485,10 @@ class System:
         """
         
         # TODO automatic tau selection
+        # This will be for long...
+        # There are good articles on this, e.g. Cao, Gillespie, Petzol: Efiicient step size for the tau-leaping simulation method
+        # For now I have to focus on other things
+        
         rates = np.array([r[2] for r in self.reactions])
         
         t = [0]  # list of time points
