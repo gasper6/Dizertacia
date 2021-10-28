@@ -922,21 +922,106 @@ class System:
         
         # log of number of different paths consisting of x[i] edges S[:, i]
         # loggamma(np.sum(x)+1) - np.sum(loggamma(xplus1))
+
+        
+        
+        # TODO: determine set of states from which the state_end is feasible with a reasonable probability
+        # state_start should lie within the region. The treshold for probability should be approximated by
+        # this expression
             
         treshold = (np.inner(np.log(avg_a[valid_reactions]), x[valid_reactions]) -\
                     np.sum(x) * np.log(avg_a0)) +\
                     loggamma(np.sum(x)+1) - np.sum(loggamma(xplus1)) +\
                     np.sum(x) * np.log(1 - np.exp(-avg_a0 * Δt)) +\
-                    np.log(epsilon)
+                    np.log(epsilon)        
+        
+        # We do two-phase Dijkstra search. In the first phase we determine the
+        # set of states from which it is possible to get to state_end
+        
+        # Backward Dijkstra
+
+        heap = maxpq()
+
+        heap.additem(state_end.tobytes(), 0)
+        
+        probable_states_backward = set()
         
         
-        # TODO: determine set of states from which the state_end is feasible with a reasonable probability
-        # state_start should lie within the region. The treshold for probability should be 
+        for j in range(n_max):
+            # most probable state so far
+            try:
+                statebytes, logp = heap.popitem()
+            except KeyError:
+                #print("Nothing left to explore")
+                break
+            
+            if np.all(statebytes == state_end.tobytes()):
+                print(np.frombuffer(statebytes, dtype))
+                print(logp)
+            
+            if logp < treshold:
+                break
+            
+            probable_states_backward.add(statebytes)
+            
+            state = np.frombuffer(statebytes, dtype)
+            
+            precedor_states = state[:, None] - S
+            
+            
+            # This is not optimal, running in O(n^2) instead of O(n).
+            # This will be (hopefully) fixed when 
+            a = np.zeros(len(self.reactions)) # propensities
+            for i in range(len(self.reactions)):
+                a[i] = self.get_propensities_comb(precedor_states[:, i], R, rates)[i]
+            
+            a0 = np.sum(a)
+            
+            if a0 == 0:
+                continue
+            
+            new_logps = logp + np.log(a) - np.log(a0) + np.log(1-np.exp(-a0*Δt))
+
+            new_logps = np.nan_to_num(new_logps, nan=-np.inf)
+            
+            for i, new_logp in enumerate(new_logps):
+                new_state = state - S[:, i]
+                
+                if new_logp <= -1.7e308: # If the most probable state is
+                # infeasable, there is nothing more to do.
+                    continue
+                
+                if new_state.tobytes() in probable_states_backward:
+                    continue # This is not good. We should add the node once more
+                    # so we do not "lose" probability on the run.
+                    # But what else do we do in order not to search the same
+                    # area of the graph multiple times?
+
+                if new_state.tobytes() in heap: # Add probabilities
+                    new_logp = self._logsum(heap[new_state.tobytes()], new_logp)
+                    heap.updateitem(new_state.tobytes(), new_logp)
+                    
+                else:
+                    heap.additem(new_state.tobytes(), new_logp)
+            
+            #print(len(heap))
+
+            #print("Heap items")
+            #print(*[(np.frombuffer(s, np.int32), heap[s]) for s in heap.keys()], sep="\n") # peek into heap
+            #print()
+            #print("Probable set items:")
+            #print(*[np.frombuffer(s, np.int32) for s in probable_states_backward], sep="\n") # Peek into probable set
+            #print("\n")
         
-        # Feasible set
+        if state_start.tobytes() not in probable_states_backward:
+            raise ValueError("The trasition from " + str(state_start)+
+                             " to " + str(state_end) +
+                             " seems to be unfeasible. "+
+                             "If this seems incorrect, try raising n_max " +
+                             "parameter or lower epsilon parameter.")
+
         
-        
-        # Start Dijkstra
+        # Forward Dijkstra
         heap = maxpq()
 
         heap.additem(state_start.tobytes(), 0)
@@ -954,6 +1039,9 @@ class System:
             
             if logp < treshold:
                 break
+            
+            if statebytes not in probable_states_backward:
+                continue
             
             probable_states.add(statebytes)
             
@@ -978,8 +1066,8 @@ class System:
                 if new_state.tobytes() in probable_states:
                     continue # This is not good. We should add the node once more
                     # so we do not "lose" probability on the run.
-                    # We might prioritize this node, so that we do not
-                    # depth-search the same area twice.
+                    # But what else do we do in order not to search the same
+                    # area of the graph multiple times?
 
                 if new_state.tobytes() in heap: # Add probabilities
                     new_logp = self._logsum(heap[new_state.tobytes()], new_logp)
@@ -990,7 +1078,7 @@ class System:
                 
 
             
-            # print([(np.frombuffer(s, np.int32), heap[s]) for s in heap.keys()]) # peek into heap
+            # print([*(np.frombuffer(s, np.int32), heap[s]) for s in heap.keys()], sep="\n") # peek into heap
             # print()
             # print([np.frombuffer(s, np.int32) for s in probable_states]) # Peek into probable set
             # print("\n")
