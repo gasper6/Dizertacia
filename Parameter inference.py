@@ -8,7 +8,7 @@ Created on Wed Jul 28 17:08:32 2021
 import numpy as np
 import matplotlib.pyplot as plt
 
-# from collections import defaultdict
+from collections import defaultdict
 from scipy.optimize import linprog
 from scipy.special import comb, loggamma
 from pqdict import maxpq
@@ -1042,6 +1042,8 @@ class System:
                 break
             
             if statebytes not in probable_states_backward:
+                # TODO: add a set which keeps track of these "discarded"
+                # states. It will help us with error analysis.
                 continue
             
             probable_states.add(statebytes)
@@ -1089,7 +1091,7 @@ class System:
 
         
     # TODO: compile this function with numba
-    @jit
+    @jit(nopython=True, cache=True)
     def _logsum(self, A, B):
         """
         If `A = ln(a)` and `B = ln(b)`, this function returns `ln(a+b)`.
