@@ -10,26 +10,25 @@ from scipy.sparse import random, diags
 from scipy.sparse.linalg import expm_multiply
 from scipy.integrate import solve_ivp
 
-t_max = 100
+t_max = 200
 
-N = 5000
+N = 30000
 
 A = random(N, N, density=2/N, format="csc")
 A = A - diags(A.sum(1).A1)
 
 x0 = np.random.rand(N)
-x0 /= x0.sum() * 10**10
+x0 /= x0.sum()
 
 eA = expm_multiply(A, x0, 0, t_max, num=2, endpoint=True)[-1]
 
 
-"""
-print("expm function")
-%timeit eA = expm_multiply(A, x0, 0, t_max, num=2, endpoint=True)
-"""
-
 def dt(t, y):
     return A @ y
+
+
+def dt_log(t, y):
+    return None # TODO
 
 
 
@@ -43,7 +42,10 @@ for m in ("RK23", "RK45", "DOP853"):
     sols.append(solve_ivp(dt, (0, t_max), x0, jac=A, method=m, t_eval=(t_max,)))
     
 """
+print("expm function:")
+%timeit eA = expm_multiply(A, x0, 0, t_max, num=2, endpoint=True)
+
 for m in ("RK23", "RK45", "DOP853"):
-    print(m)
-    %timeit solve_ivp(dt, (0, t_max), x0, jac=A, method=m, t_eval=(t_max,), vectorized=True)
+    print(m + ":")
+    %timeit solve_ivp(dt, (0, t_max), x0, method=m, t_eval=(t_max,), vectorized=True)
 """
