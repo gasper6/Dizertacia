@@ -375,7 +375,7 @@ class System:
         
         for i in range(n_iter):
             alphas = self.get_propensities_comb(x[-1], R, rates)
-            alpha_sum = np.sum(alphas)
+            alpha_sum = alphas.sum()
             if alpha_sum == 0:  # No reaction will happen
                 t.append(t_max)
                 x.append(x[-1])
@@ -429,7 +429,7 @@ class System:
         
         for i in range(1, n_iter+1):
             alphas = self.get_propensities_comb(current_state, R, rates)
-            alpha_sum = np.sum(alphas)
+            alpha_sum = alphas.sum()
             if alpha_sum == 0:  # No reaction will happen
                 x[index:, :] = current_state[None, :]
                 break
@@ -512,7 +512,7 @@ class System:
         
         for i in range(n_iter):
             alphas = self.get_propensities_comb(current_state, R, rates)
-            alpha_sum = np.sum(alphas)
+            alpha_sum = alphas.sum()
             if alpha_sum == 0:
                 t.append(t_max)
                 x.append(current_state)
@@ -868,14 +868,16 @@ class System:
     def _get_truncated_state_space(self, Δt, state_start, state_end,
                                    rates=None, epsilon=1/100, n_max = 100000,
                                    A=None):
+        
+        # TODO: Is it possible that is done only once,
+        # even when calculating various parameters?
+        
         rates=None
         epsilon = 1e-5
         n_max = 1000000
         #A = None
         
-        # First guess on probability
-        # dijkstra from the end to determine from where you cannot get into end_state
-        # dijstra from the start, discarding all but feasible set
+        
         if rates is None:
             rates = np.array([r[2] for r in self.reactions])
         else:
@@ -896,7 +898,10 @@ class System:
         # A = np.atleast_2d(np.array(A))
         # assert len(A.shape) == 2, "Matrix `Α` must be vector or 2-dimensional!"
         # assert A.shape[1] == S.shape[0], "Matrix A must have %d columns!"%S.shape[0]
-
+        
+        ##########################
+        ### Phase 1  (Linprog) ###
+        ##########################
         
         # We use Simpson 1-3-3-1 rule for average propensity
         # TODO: incorporate matrix A into this. LP might be needed for these vectors.
@@ -906,11 +911,11 @@ class System:
         P4 = self.get_propensities_comb(state_end, R, rates)
         
         avg_a = (P1 + 3*P2 + 3*P3 + P4)/8
-        avg_a0 = np.sum(avg_a)
+        avg_a0 = avg_a.sum()
         valid_reactions = avg_a > 0
         
         
-        c = np.log(avg_a[valid_reactions]) - np.log(np.sum(avg_a))
+        c = np.log(avg_a[valid_reactions]) - np.log(avg_a.sum())
         
         # res = linprog(-c, A_eq=A@S, b_eq=A@change, method="revised simplex") # if slow, change to interior_point
         res = linprog(-c, A_eq=S, b_eq=change, method="revised simplex") # if slow, change to interior_point
@@ -918,28 +923,27 @@ class System:
         if res.status != 0:
             raise ValueError("The state seems to be infeasible, or other problems in linprog phase occurred.")
         
-        x = np.ceil(res.x)
-        xplus1 = np.ceil(x) + 1
+        u = np.ceil(res.x)
+        u_sum = u.sum()
+        uplus1 = np.ceil(u) + 1
         
         # log of number of different paths consisting of x[i] edges S[:, i]
         # loggamma(np.sum(x)+1) - np.sum(loggamma(xplus1))
-
         
-        
-        # TODO: determine set of states from which the state_end is feasible with a reasonable probability
-        # state_start should lie within the region. The treshold for probability should be approximated by
-        # this expression
-            
-        treshold = (np.inner(np.log(avg_a[valid_reactions]), x[valid_reactions]) -\
-                    np.sum(x) * np.log(avg_a0)) +\
-                    loggamma(np.sum(x)+1) - np.sum(loggamma(xplus1)) +\
-                    np.sum(x) * np.log(1 - np.exp(-avg_a0 * Δt)) +\
+        treshold = (np.inner(np.log(avg_a[valid_reactions]), u[valid_reactions]) -\
+                    u_sum * np.log(avg_a0)) +\
+                    loggamma(u_sum+1) - (loggamma(uplus1)).sum() +\
+                    u_sum * np.log(1 - np.exp(-avg_a0 * Δt)) +\
                     np.log(epsilon)        
+        
         
         # We do two-phase Dijkstra search. In the first phase we determine the
         # set of states from which it is possible to get to state_end
         
-        # Backward Dijkstra
+        
+        ####################################
+        ### Phase 2  (Backward Dijkstra) ###
+        ####################################
 
         heap = maxpq()
 
@@ -956,9 +960,10 @@ class System:
                 #print("Nothing left to explore")
                 break
             
-            if np.all(statebytes == state_end.tobytes()):
-                print(np.frombuffer(statebytes, dtype))
-                print(logp)
+            #  For debug only
+            #if np.all(statebytes == state_end.tobytes()):
+            #    print(np.frombuffer(statebytes, dtype))
+            #    print(logp)
             
             if logp < treshold:
                 break
@@ -976,12 +981,12 @@ class System:
             for i in range(len(self.reactions)):
                 a[i] = self.get_propensities_comb(precedor_states[:, i], R, rates)[i]
             
-            a0 = np.sum(a)
+            a0 = a.sum()
             
             if a0 == 0:
                 continue
             
-            new_logps = logp + np.log(a) - np.log(a0) + np.log(1-np.exp(-a0*Δt))
+            new_logps = logp + np.log(a) - np.log(a0) + np.log(1-np.exp(-a0*Δt))    
 
             new_logps = np.nan_to_num(new_logps, nan=-np.inf)
             
@@ -992,18 +997,20 @@ class System:
                 # infeasable, there is nothing more to do.
                     continue
                 
-                if new_state.tobytes() in probable_states_backward:
+                new_state_bytes = new_state.tobytes()
+                
+                if new_state_bytes in probable_states_backward:
                     continue # This is not good. We should add the node once more
                     # so we do not "lose" probability on the run.
                     # But what else do we do in order not to search the same
                     # area of the graph multiple times?
 
-                if new_state.tobytes() in heap: # Add probabilities
-                    new_logp = self._logsum(heap[new_state.tobytes()], new_logp)
-                    heap.updateitem(new_state.tobytes(), new_logp)
+                if new_state_bytes in heap: # Add probabilities
+                    new_logp = self._logsum(heap[new_state_bytes], new_logp)
+                    heap.updateitem(new_state_bytes, new_logp)
                     
                 else:
-                    heap.additem(new_state.tobytes(), new_logp)
+                    heap.additem(new_state_bytes, new_logp)
             
             #print(len(heap))
 
@@ -1020,9 +1027,14 @@ class System:
                              " seems to be unfeasible. "+
                              "If this seems incorrect, try raising n_max " +
                              "parameter or lower epsilon parameter.")
-
         
-        # Forward Dijkstra
+        
+        
+        #################################
+        # Phase 3  (Forward Dijkstra) ###
+        #################################
+        
+        
         heap = maxpq()
 
         heap.additem(state_start.tobytes(), 0)
@@ -1050,7 +1062,7 @@ class System:
             
             state = np.frombuffer(statebytes, dtype)
             a = self.get_propensities_comb(state, R, rates) # propensities
-            a0 = np.sum(a)
+            a0 = a.sum()
             
             if a0 == 0:
                 continue
@@ -1066,18 +1078,23 @@ class System:
                 # infeasable, there is nothing more to do.
                     continue
                 
-                if new_state.tobytes() in probable_states:
-                    continue # This is not good. We should add the node once more
+                
+                new_state_bytes = new_state.tobytes()
+                
+                if new_state_bytes in probable_states:
+                    continue
+                
+                    # This is not good. We should add the node once more
                     # so we do not "lose" probability on the run.
                     # But what else do we do in order not to search the same
                     # area of the graph multiple times?
 
-                if new_state.tobytes() in heap: # Add probabilities
-                    new_logp = self._logsum(heap[new_state.tobytes()], new_logp)
-                    heap.updateitem(new_state.tobytes(), new_logp)
+                if new_state_bytes in heap: # Add probabilities
+                    new_logp = self._logsum(heap[new_state_bytes], new_logp)
+                    heap.updateitem(new_state_bytes, new_logp)
                     
                 else:
-                    heap.additem(new_state.tobytes(), new_logp)
+                    heap.additem(new_state_bytes, new_logp)
                 
 
             
