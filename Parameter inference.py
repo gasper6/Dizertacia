@@ -90,7 +90,7 @@ class System:
             print(", ".join(self.species.keys()))
     
     
-    def add_reaction(self, reactants:tuple, products:tuple, rate:float,
+    def add_reaction(self, reactants:tuple, products:tuple, rate:float=0,
                      name:str="[No description]", additional_stoichiometry:dict={}, ):
         """
         
@@ -106,7 +106,7 @@ class System:
             If the reaction has only one product, then this is its name.
             Otherwise if tuple of products names.
         rate : float
-            Rate at which the reaction occurs.
+            Rate at which the reaction occurs. The default is 0.
         additional_stoichiometry : dictionary, optional
             If there is dummy species that should be incorporated into system,
             write its stochiometric coefficients in form of
@@ -1040,6 +1040,7 @@ class System:
         heap.additem(state_start.tobytes(), 0)
         
         probable_states = set()
+        probable_states_unreachable = set()
         
         
         for j in range(n_max):
@@ -1106,10 +1107,15 @@ class System:
         if state_end.tobytes() not in probable_states:
             raise ValueError("The set of probable states is too big!")
 
-        
+    def _construct_truncated_ME(state_start, state_end, probable_states,
+                                probable_states_unreachable):
+        pass
+
+
+    
     # TODO: compile this function with numba
-    @jit(nopython=True, cache=True)
-    def _logsum(self, A, B):
+    # @jit(nopython=True, cache=True)  # Does't work. Might throw TypingError: non-precise type pyobject
+    def _logsum(self, A:np.float64, B:np.float64) -> np.float64:
         """
         If `A = ln(a)` and `B = ln(b)`, this function returns `ln(a+b)`.
 
@@ -1126,7 +1132,9 @@ class System:
         A, B = max(A, B), min(A, B)
         res = A + np.log(1+np.exp(B-A))
 
+        # return res
         return np.nan_to_num(res, nan=-np.inf)
+        
             
     
     def _calculate_trasition_likelihood(Δt, state_start, state_end):

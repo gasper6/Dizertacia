@@ -10,9 +10,9 @@ from scipy.sparse import random, diags
 from scipy.sparse.linalg import expm_multiply
 from scipy.integrate import solve_ivp
 
-t_max = 200
+t_max = 100
 
-N = 30000
+N = 1000
 
 A = random(N, N, density=2/N, format="csc")
 A = A - diags(A.sum(1).A1)
@@ -20,32 +20,59 @@ A = A - diags(A.sum(1).A1)
 x0 = np.random.rand(N)
 x0 /= x0.sum()
 
-eA = expm_multiply(A, x0, 0, t_max, num=2, endpoint=True)[-1]
-
 
 def dt(t, y):
     return A @ y
 
 
 def dt_log(t, y):
-    return None # TODO
+    x = np.exp(y)
+    return  (A @ x)/x
 
+
+eA = expm_multiply(A, x0, 0, t_max, num=2, endpoint=True)[-1]
 
 
 sols = []
-"""
-for m in ("RK23", "RK45", "DOP853", "Radau", "BDF", "LSODA"):
-    sols.append(solve_ivp(dt, (0, t_max), x0, jac=A, method=m, t_eval=(t_max,)))
-"""
+
+# Implicit methods are exluded, they are way too slow
+for m in ("RK23", "RK45", "DOP853"):
+    sols.append(solve_ivp(dt, (0, t_max), x0, method=m, t_eval=(t_max,), vectorized=False, rtol=1e-12))
+
+x0_log = np.log(x0)
+
+sols_log = []
   
 for m in ("RK23", "RK45", "DOP853"):
-    sols.append(solve_ivp(dt, (0, t_max), x0, jac=A, method=m, t_eval=(t_max,)))
+    sols_log.append(solve_ivp(dt_log, (0, t_max), x0_log, method=m, t_eval=(t_max,), atol=1e-12))
+
+
+if N <= 5:
+    print("expm solution:")
+    print(eA)
+    print()
     
+    print("ODE solutions:")
+    print(*[s.y.ravel() for s in sols], sep="\n")
+    print()
+    
+    print("ODE log-solutions:")
+    print(*[np.exp(s.y.ravel()) for s in sols_log], sep="\n")
+    print()
+
+
 """
 print("expm function:")
 %timeit eA = expm_multiply(A, x0, 0, t_max, num=2, endpoint=True)
 
+print("ODE")
 for m in ("RK23", "RK45", "DOP853"):
     print(m + ":")
-    %timeit solve_ivp(dt, (0, t_max), x0, method=m, t_eval=(t_max,), vectorized=True)
+    %timeit solve_ivp(dt, (0, t_max), x0, method=m, t_eval=(t_max,), vectorized=True, rtol=1e-12)
+
+print("ODE log-transformed")
+for m in ("RK23", "RK45", "DOP853"):
+    print(m + ":")
+    %timeit sols_log.append(solve_ivp(dt_log, (0, t_max), x0_log, method=m, t_eval=(t_max,), atol=1e-12))
+
 """
