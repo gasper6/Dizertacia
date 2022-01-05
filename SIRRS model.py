@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
-S_init = 9991
+S_init = 9999
 I_init = 1
 R_init = 0
 
@@ -54,12 +54,18 @@ def SIRRS(t, y, β, γ, ω, β_=None):
     
     return dS, dI, *dR
 
+
+# Setting initial conditon and timespan
+
 y0 = np.zeros(k+2)
 y0[0] = S_init
 y0[1] = I_init
 y0[2] = R_init
 
 t_eval = np.arange(N_eval+1) * (t_max/N_eval)
+
+
+# Numerical solution
 
 sol = solve_ivp(SIRRS, (0, t_max), y0, method="RK45", args=(β, γ, ω, β_),
                 t_eval=t_eval, dense_output=True)
@@ -69,6 +75,13 @@ I = sol.y[1]
 R = sol.y[2:].sum(0)
 t = sol.t
 
+# Plotting
+
+plt.rcParams.update({'font.size': 14,
+                     'font.family': 'serif',
+                     'figure.figsize': (11.52, 6.48)
+                     })
+
 plt.figure()
 plt.plot(t, S, "b", label="Susceptible")
 plt.plot(t, I, "r", label="Infectious")
@@ -77,6 +90,35 @@ plt.title("")
 plt.grid()
 plt.legend()
 plt.tight_layout()
+
+
+plt.figure()
+plt.plot(t, I, "r", label="Infectious")
+plt.title("Infectious")
+plt.grid()
+plt.tight_layout()
+
+
+plt.figure()
+plt.plot(t, sol.y[2:].T, "k", alpha=0.1)
+# plt.plot(None, None, "k", alpha=0.1, label="Individual comaprtments")
+plt.plot(t, R, "g", label="Recovered")
+plt.title("Recovered")
+plt.grid()
+plt.tight_layout()
+
+
+plt.figure()
+plt.plot(t, S, "b", label="Susceptible")
+plt.plot(t, I, "r", label="Infectious")
+plt.plot(t, R, "g", label="Recovered")
+plt.title("")
+plt.grid()
+plt.legend()
+plt.tight_layout()
+
+
+
 plt.show()
 
 
