@@ -1,0 +1,10 @@
+Initial = 9999.000000, 1.000000, 0.000000
+R0 = 3
+M = 2
+SD = 0.5
+infectious_period = 0.027
+gamma = 36
+beta = 1.1e+02
+beta_tilde = 2.2e+02
+k = 16
+omega = 8
