@@ -865,46 +865,36 @@ class System:
             transitions.append((Δt, state_start, state_end))
             
     
-    def _get_truncated_state_space(self, Δt, state_start, state_end,
-                                   rates=None, epsilon=1/100, n_max = 100000,
-                                   A=None):
-        
-        # TODO: Is it possible that is done only once,
-        # even when calculating various parameters?
-        
-        rates=None
-        epsilon = 1e-5
-        n_max = 1000000
-        #A = None
-        
-        
-        if rates is None:
-            rates = np.array([r[2] for r in self.reactions])
-        else:
-            rates = np.array(rates)
+    def _linprog_phase(self, Δt, R, S, rates, change, epsilon=1/100):
+        """
+        Internal method for phase 1 of parameter estimation.
 
-        dtype = state_start.dtype
-        assert state_end.dtype == dtype, "Data type mismatch!"
-        
-        species_map = self.get_species_map()
-        S = self.get_stoichiometry(species_map)
-        R = self.get_reactant_matrix(species_map)
+        Parameters
+        ----------
+        Δt : float
+            Time elapsed between obseravions.
+        R : 2-dimesnional array
+            Matrix of reactants.
+        S : 2-dimesnional array
+            Stoichiometry matrix.
+        rates : 1-dimensional array
+            Vector of floats (rates). For now only constant rates are allowed.
+        change : 1-dimensional array
+            Vector calculated by: state_at_end - state_at_beginning.
+        epsilon : float, optional
+            Tolerance parameter. The default is 1/100.
 
-        change = state_end - state_start
+        Raises
+        ------
+        ValueError
+            If arrays do not have appropriate shapes.
 
-        # TODO: What if we could observe only A@state, where A is a known matrix?
-        # if A is None:
-        #     A = np.eye(S.shape[0])
-        # A = np.atleast_2d(np.array(A))
-        # assert len(A.shape) == 2, "Matrix `Α` must be vector or 2-dimensional!"
-        # assert A.shape[1] == S.shape[0], "Matrix A must have %d columns!"%S.shape[0]
-        
-        ##########################
-        ### Phase 1  (Linprog) ###
-        ##########################
-        
-        # We use Simpson 1-3-3-1 rule for average propensity
-        # TODO: incorporate matrix A into this. LP might be needed for these vectors.
+        Returns
+        -------
+        treshold : float
+            Estimate for depth of graph search.
+
+        """
         P1 = self.get_propensities_comb(state_start, R, rates)
         P2 = self.get_propensities_comb((2*state_start + state_end)/3, R, rates)
         P3 = self.get_propensities_comb((state_start + 2*state_end)/3, R, rates)
@@ -934,17 +924,49 @@ class System:
                     u_sum * np.log(avg_a0)) +\
                     loggamma(u_sum+1) - (loggamma(uplus1)).sum() +\
                     u_sum * np.log(1 - np.exp(-avg_a0 * Δt)) +\
-                    np.log(epsilon)        
+                    np.log(epsilon) 
         
+        return treshold
+    
+    def _get_truncated_state_space(self, Δt, state_start, state_end,
+                                   rates=None, epsilon=1/100, n_max = 100000):
         
-        # We do two-phase Dijkstra search. In the first phase we determine the
-        # set of states from which it is possible to get to state_end
+        if rates is None:
+            rates = np.array([r[2] for r in self.reactions])
+        else:
+            rates = np.array(rates)
+
+        dtype = state_start.dtype
+        assert state_end.dtype == dtype, "Data type mismatch!"
         
+        species_map = self.get_species_map()
+        S = self.get_stoichiometry(species_map)
+        R = self.get_reactant_matrix(species_map)
+
+        change = state_end - state_start
+
+        # TODO: What if we could observe only A@state, where A is a known matrix?
+        # if A is None:
+        #     A = np.eye(S.shape[0])
+        # A = np.atleast_2d(np.array(A))
+        # assert len(A.shape) == 2, "Matrix `Α` must be vector or 2-dimensional array!"
+        # assert A.shape[1] == S.shape[0], "Matrix A must have %d columns!"%S.shape[0]
+        
+        ##########################
+        ### Phase 1  (Linprog) ###
+        ##########################
+        # Estimates the depth of graph search
+        treshold = self._linprog_phase(Δt, R, S, rates, change, epsilon=1/100)
+               
         
         ####################################
         ### Phase 2  (Backward Dijkstra) ###
         ####################################
-
+        # We do two-phase Dijkstra search. In the second phase we determine the
+        # set of states from which it is possible to get to state_end
+        # Maybe this will be omitted in the future, if graph search will be
+        # more expansive than matrix exponentiation
+        
         heap = maxpq()
 
         heap.additem(state_end.tobytes(), 0)
@@ -1106,6 +1128,9 @@ class System:
         
         if state_end.tobytes() not in probable_states:
             raise ValueError("The set of probable states is too big!")
+
+
+
 
     def _construct_truncated_ME(state_start, state_end, probable_states,
                                 probable_states_unreachable):
