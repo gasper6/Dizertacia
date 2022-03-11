@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 from scipy.optimize import linprog
 from scipy.special import comb, loggamma
+from scipy.sparse import csc_matrix
 from pqdict import maxpq
 from numba import jit
 
@@ -1077,9 +1078,10 @@ class System:
                 break
             
             if statebytes not in probable_states_backward:
-                # TODO: add a set which keeps track of these "discarded"
-                # states. It will help us with error analysis.
-                continue
+                probable_states_unreachable.add(statebytes)
+            #    a set which keeps track of these "discarded"
+            #    states. It will help us with error analysis.
+            
             
             probable_states.add(statebytes)
             
@@ -1128,21 +1130,48 @@ class System:
         
         if state_end.tobytes() not in probable_states:
             raise ValueError("The set of probable states is too big!")
+        
+        return probable_states, probable_states_unreachable, S, R, rates
 
 
 
 
     def _construct_truncated_ME(state_start, state_end, probable_states,
-                                probable_states_unreachable):
-        pass
+                                probable_states_unreachable, S, R, rates):
+        dtype = state_start.dtype
+        
+        
+        N = len(probable_states)
+        D = dict(zip(list(probable_states), np.arange(1, N+1)))
+        
+        A = csc_matrix((N+1, N+1))
+        
+        for x_bytes in D.keys():
+            x = np.frombuffer(x_bytes, dtype=dtype)
+            a = self.get_propensities_comb(x, R, rates)
+            a0 = a.sum()
+            
+            j = D[x_bytes] # column corresponding to state x 
+            A[j, j] = -a0
+            
+            for rate, ν in zip(rates, S.T):
+                new_state = x + ν
+                new_state_bytes = new_state.tobytes()
+                
+                if new_state_bytes in probable_states:
+                    i = D[new_state_bytes]
+                    A[i, j] = rate
+                else:
+                    A[0, j] = rate
+            
 
 
-    
-    # TODO: compile this function with numba
+
     # @jit(nopython=True, cache=True)  # Does't work. Might throw TypingError: non-precise type pyobject
     def _logsum(self, A:np.float64, B:np.float64) -> np.float64:
         """
         If `A = ln(a)` and `B = ln(b)`, this function returns `ln(a+b)`.
+        Should be numerically stable.
 
         Parameters
         ----------
@@ -1162,8 +1191,12 @@ class System:
         
             
     
-    def _calculate_trasition_likelihood(Δt, state_start, state_end):
-        pass
+    def _calculate_trasition_likelihood(Δt, state_start, state_end, rates):
+        probable_states, probable_states_unreachable, S, R, rates = \
+            self._get_truncated_state_space(Δt, state_start, state_end, rates=rates)
+        
+        
+        
     
     def __str__(self):
         return "An object of type System, representing a setup for chemical kinetics simulation.\n" + \
