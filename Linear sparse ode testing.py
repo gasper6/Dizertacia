@@ -40,6 +40,7 @@ for m in ("RK23", "RK45", "DOP853"):
     sols.append(solve_ivp(dt, (0, t_max), x0, method=m, t_eval=(t_max,), vectorized=False, rtol=1e-12))
 
 x0_log = np.log(x0)
+x0_log = np.nan_to_num(x0_log, neginf=-1e200)
 
 sols_log = []
   

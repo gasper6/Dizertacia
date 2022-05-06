@@ -930,7 +930,7 @@ class System:
         return treshold
     
     def _get_truncated_state_space(self, Δt, state_start, state_end,
-                                   rates=None, epsilon=1/100, n_max = 100000):
+                                   rates=None, epsilon=1e-6, n_max = 100000):
         
         if rates is None:
             rates = np.array([r[2] for r in self.reactions])
@@ -1136,13 +1136,15 @@ class System:
 
 
 
-    def _construct_truncated_ME(state_start, state_end, probable_states,
+    def _construct_truncated_ME(self, state_start, state_end, probable_states,
                                 probable_states_unreachable, S, R, rates):
         dtype = state_start.dtype
         
         
         N = len(probable_states)
         D = dict(zip(list(probable_states), np.arange(1, N+1)))
+        
+        state_end_number = D[state_end.tobytes()]
         
         A = csc_matrix((N+1, N+1))
         
@@ -1163,6 +1165,8 @@ class System:
                     A[i, j] = rate
                 else:
                     A[0, j] = rate
+        
+        return A, state_end_number
             
 
 
@@ -1194,6 +1198,8 @@ class System:
     def _calculate_trasition_likelihood(Δt, state_start, state_end, rates):
         probable_states, probable_states_unreachable, S, R, rates = \
             self._get_truncated_state_space(Δt, state_start, state_end, rates=rates)
+        A, state_end_number = self._construct_truncated_ME(state_start, state_end, probable_states,
+                                                           probable_states_unreachable, S, R, rates)
         
         
         
